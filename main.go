@@ -26,7 +26,7 @@ func init() {
 	startTime = time.Now()
 
 	// Parse command line arguments.
-	flag.StringVar(&accountToken, "t", "MzY0NDgxNDQxNTE5ODk0NTM4.DjCDuw.o0o1iyRGAEUTxKarVdYAQiEfyvE", "Bot account token")
+	flag.StringVar(&accountToken, "t", "", "Bot account token")
 	flag.Parse()
 	if accountToken == "" {
 		flag.PrintDefaults()
