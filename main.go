@@ -196,7 +196,18 @@ func setupHandlers(session *discordgo.Session) {
 				return err
 			})
 			sendMessageChannel(sess, fmt.Sprintf("```Changed nickname to [%s]```", messageSlice[1]), evt.ChannelID)
-
+		case "!Role":
+			channel, err := sess.Channel(evt.ChannelID)
+			panicOnErr(err)
+			member, err := sess.GuildMember(channel.GuildID, evt.Author.ID)
+			panicOnErr(err)
+			for _,role := range member.Roles{
+				if role
+			}
+			if len(messageSlice) < 3 {
+				sendMessageChannel(sess, fmt.Sprintf("Need more parameter [hint] !Role @User @Role"), evt.ChannelID)
+				break
+			}
 		}
 	})
 
