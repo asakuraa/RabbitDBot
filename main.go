@@ -196,7 +196,7 @@ func setupHandlers(session *discordgo.Session) {
 				return err
 			})
 			sendMessageChannel(sess, fmt.Sprintf("```Changed nickname to [%s]```", messageSlice[1]), evt.ChannelID)
-
+		case "!TEst":
 		}
 	})
 
