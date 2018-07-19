@@ -7,21 +7,23 @@ import (
 	"log"
 	"os"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/bwmarrin/discordgo"
 )
 
 var logger *log.Logger
-var usersOnline map[string]struct{}
+var usersOnline map[string]string
 var startTime time.Time
+var wg sync.WaitGroup
 
 // Parameters from flag.
 var accountToken string
 
 func init() {
 	// Create initials.
-	usersOnline = make(map[string]struct{})
+	usersOnline = make(map[string]string)
 	logger = log.New(os.Stderr, "  ", log.Ldate|log.Ltime)
 	startTime = time.Now()
 
@@ -153,12 +155,21 @@ func main() {
 	<-make(chan struct{})
 }
 
+func chanMessaage(sess *discordgo.Session, u *discordgo.User, status string, guildid string, statusChan chan string) {
+	sendMessage(sess, fmt.Sprintf("``` %s is now %s```", u.Username, status), guildid)
+	statusChan <- status
+}
+
 func setupHandlers(session *discordgo.Session) {
 	logInfo("Setting up event handlers...")
 
 	session.AddHandler(func(sess *discordgo.Session, evt *discordgo.MessageCreate) {
 		message := evt.Message
-		switch strings.ToLower(strings.TrimSpace(message.Content)) {
+		messageSlice := strings.Fields(strings.ToLower(strings.TrimSpace(message.Content)))
+		if len(messageSlice) < 1 {
+			return
+		}
+		switch messageSlice[0] {
 		case "!uptime":
 			hostname, err := os.Hostname()
 			panicOnErr(err)
@@ -170,6 +181,22 @@ func setupHandlers(session *discordgo.Session) {
 				int(duration.Seconds())%60,
 				startTime.Format(time.Stamp),
 				hostname), evt.ChannelID)
+			break
+		case "!nick":
+		case "!nickname":
+			if len(messageSlice) < 2 {
+				sendMessageChannel(sess, fmt.Sprintf("Need more parameter [hint] !Nick name-to-change"), evt.ChannelID)
+				break
+			}
+			channel, err := sess.Channel(evt.ChannelID)
+			panicOnErr(err)
+			logInfo("CHANGING NICKNAME ON GUILD :", channel.GuildID, "TO", messageSlice[1])
+			retryOnBadGateway(func() error {
+				err := sess.GuildMemberNickname(channel.GuildID, "@me", messageSlice[1])
+				return err
+			})
+			sendMessageChannel(sess, fmt.Sprintf("```Changed nickname to [%s]```", messageSlice[1]), evt.ChannelID)
+
 		}
 	})
 
@@ -182,24 +209,19 @@ func setupHandlers(session *discordgo.Session) {
 			return
 		}
 
-		/*
-		    StatusOnline       Status = "online"
-		   	StatusIdle         Status = "idle"
-		   	StatusDoNotDisturb Status = "dnd"
-		   	StatusInvisible    Status = "invisible"
-		   	StatusOffline      Status = "offline"
-		*/
-
 		// Handle online/offline notifications
-		if evt.Status == "offline" {
-			if _, ok := usersOnline[u.ID]; ok {
-				delete(usersOnline, u.ID)
-				sendMessage(sess, fmt.Sprintf(`**%s** went offline`, u.Username), evt.GuildID)
+		switch evt.Status {
+		case "offline":
+			if usersOnline[u.ID] != "offline" {
+				usersOnline[u.ID] = "offline"
+				sendMessage(sess, fmt.Sprintf("``` %s went offline```", u.Username), evt.GuildID)
 			}
-		} else {
-			if _, ok := usersOnline[u.ID]; (!ok && evt.Status == "online") || evt.Status != "online" {
-				usersOnline[u.ID] = struct{}{}
-				sendMessage(sess, fmt.Sprintf(`**%s** is now %s`, u.Username, evt.Status), evt.GuildID)
+			break
+		default:
+			if usersOnline[u.ID] != string(evt.Status) {
+				statusChan := make(chan string)
+				go chanMessaage(sess, u, string(evt.Status), evt.GuildID, statusChan)
+				usersOnline[u.ID] = <-statusChan
 			}
 		}
 	})
@@ -208,8 +230,8 @@ func setupHandlers(session *discordgo.Session) {
 		logInfo("GUILD_CREATE event fired")
 		for _, presence := range evt.Presences {
 			user := presence.User
-			logInfo("Marked user-ID online:", user.ID)
-			usersOnline[user.ID] = struct{}{}
+			logInfo("Marked user-ID ", presence.Status, ":", user.ID)
+			usersOnline[user.ID] = string(presence.Status)
 		}
 	})
 }
